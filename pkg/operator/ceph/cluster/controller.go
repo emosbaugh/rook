@@ -562,27 +562,33 @@ func (c *ClusterController) onK8sNodeUpdate(oldObj, newObj interface{}) {
 		// Skipping cluster update. Updated node was and is still unschedulable
 		return
 	}
-	if oldNodeSchedulable == true && newNodeSchedulable == true {
-		// Skipping cluster update. Updated node was and is still schedulable
-		return
-	}
 
 	for _, cluster := range c.clusterMap {
 		if cluster.Info == nil {
 			logger.Infof("Cluster %s is not ready. Skipping orchestration.", cluster.Namespace)
 			continue
 		}
-		if valid, _ := k8sutil.ValidNode(*newNode, cephv1.GetOSDPlacement(cluster.Spec.Placement)); valid == true {
-			logger.Debugf("Adding %s to cluster %s", newNode.Labels[v1.LabelHostname], cluster.Namespace)
-			err := cluster.createInstance(c.rookImage, cluster.Info.CephVersion)
-			if err != nil {
-				logger.Errorf("Failed adding the updated node %q to cluster in namespace %q. %v", newNode.Labels[v1.LabelHostname], cluster.Namespace, err)
-				continue
-			}
-		} else {
+
+		newValid, _ := k8sutil.ValidNode(*newNode, cephv1.GetOSDPlacement(cluster.Spec.Placement))
+		if newValid == false {
 			logger.Infof("Updated node %q is not valid and could not get added to cluster in namespace %q.", newNode.Labels[v1.LabelHostname], cluster.Namespace)
 			continue
 		}
+
+		oldValid, _ := k8sutil.ValidNode(*oldNode, cephv1.GetOSDPlacement(cluster.Spec.Placement))
+		if oldValid == true && newValid == true {
+			// Skipping cluster update. Updated node was and is still valid
+			// NOTE: this does not support changing cluster placement spec
+			continue
+		}
+
+		logger.Debugf("Adding %s to cluster %s", newNode.Labels[v1.LabelHostname], cluster.Namespace)
+		err := cluster.createInstance(c.rookImage, cluster.Info.CephVersion)
+		if err != nil {
+			logger.Errorf("Failed adding the updated node %q to cluster in namespace %q. %v", newNode.Labels[v1.LabelHostname], cluster.Namespace, err)
+			continue
+		}
+
 		logger.Infof("Added updated node %q to cluster %q", newNode.Labels[v1.LabelHostname], cluster.Namespace)
 	}
 }
